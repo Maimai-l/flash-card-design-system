@@ -1,0 +1,839 @@
+/* ── Page head ──────────────────────────────────────────────────────────────
+   Every page in the chrome opens with exactly the same two lines: a kicker and
+   a title, at a fixed height. Nothing else goes in here — no search box, no
+   primary action — so the title sits at the same y and the first card starts at
+   the same y on all six pages. Controls belong under the head, in the content,
+   where they can be looked at rather than hunted for in a corner. */
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 62px;
+  padding-top: 22px;
+  margin-bottom: 22px;
+}
+.page-head h1 { display: flex; align-items: baseline; gap: 14px; }
+.page-head h1 .count {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--grey-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A full-width bar of controls, sitting on the page rather than in the head. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border-radius: var(--r-pill);
+  padding: 10px 12px 10px 16px;
+  margin-bottom: 18px;
+  min-height: 60px;
+}
+.toolbar .toolbar-search { flex: 1; min-width: 180px; max-width: 320px; }
+.toolbar .input { background: var(--field); }
+
+/* ── Home ───────────────────────────────────────────────────────────────────
+   Two cards on the top row, equal height because they are grid siblings, then
+   the subjects across the full width beneath them. */
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(340px, 1fr) auto;
+  grid-auto-rows: min-content;
+  gap: 18px;
+  align-items: stretch;
+}
+.hero-card { grid-column: 1; grid-row: 1; }
+.activity-card { grid-column: 2; grid-row: 1; width: max-content; max-width: 100%; }
+.subject-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  /* Wide enough that the longest subject name shares its row with the pixel
+     mark and the count without wrapping. */
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 18px;
+}
+@media (max-width: 1120px) {
+  .home-grid { grid-template-columns: minmax(0, 1fr); }
+  .hero-card, .activity-card { grid-column: 1; grid-row: auto; width: auto; }
+}
+
+/* The count, the two lines and the two buttons are one block, centred in the
+   card, so the pair of cards on this row can share a height without leaving a
+   hole under the number. */
+.hero-card {
+  padding: 30px 32px 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hero-figures { display: flex; align-items: baseline; gap: 20px; }
+.hero-value {
+  font-size: 88px;
+  font-weight: 700;
+  letter-spacing: -.035em;
+  line-height: .92;
+  font-variant-numeric: tabular-nums;
+  color: var(--blue);
+}
+.hero-value.zero { color: var(--grey-4); }
+.hero-lines { display: flex; flex-direction: column; }
+.hero-lines span { font-size: 13.5px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.hero-lines span.zero { color: var(--grey-3); }
+.hero-done { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 30px; }
+
+/* The subject card copies the reference capability card: title row with the
+   pixel letter at the far right, the same row repeated upside down at the
+   bottom like a playing card, and a rule of literal periods between entries.
+   The decoration's own numbers are the reference's (1.5em / 3em / .15em /
+   period rules at 1.5em, blue at 20%), resolved against this card's em. */
+.subject-card { padding: 1.9em 2em 1.6em; display: flex; flex-direction: column; font-size: 13px; }
+.cap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cap-head .cap-name {
+  font-size: 1.5em;
+  font-weight: 700;
+  letter-spacing: .005em;
+  text-transform: uppercase;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cap-head .cap-letter {
+  position: relative;
+  left: .15em;
+  font-size: 3em;
+  font-family: 'Pixel', var(--font-ui);
+  font-weight: 400;
+  line-height: 1;
+  margin: 0;
+  flex-shrink: 0;
+}
+.cap-head .cap-letter:empty { display: none; }
+.cap-head.cap-foot { transform: rotate(180deg); margin-top: auto; padding-top: 1.4em; }
+.subject-card .chapter-rows { margin: .9em 0 .5em; }
+.chapter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px;
+  border-bottom: 2px dotted var(--rule);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+.chapter-row:last-child { border-bottom: none; }
+.subject-card .chapter-row { border-bottom: none; position: relative; }
+.subject-card .chapter-row:not(:last-child)::after {
+  content: "................................................................";
+  position: absolute;
+  left: 4px; right: 4px; bottom: -.5em;
+  font-size: 1.5em;
+  line-height: 1;
+  letter-spacing: .125em;
+  color: rgb(43 50 240 / .2);
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.chapter-row:hover { background: var(--hover); }
+.chapter-row .chapter-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chapter-row .chapter-total {
+  font-size: 12px; font-weight: 600; color: var(--grey-3); font-variant-numeric: tabular-nums;
+}
+
+/* ── Heatmap and bars ───────────────────────────────────────────────────── */
+.heatmap-wrap { overflow-x: auto; padding-bottom: 2px; }
+.heatmap { display: flex; gap: 3px; min-width: min-content; }
+.heat-col { display: flex; flex-direction: column; gap: 3px; }
+.heat-cell { width: 10px; height: 10px; border-radius: 2px; background: var(--ramp-0); }
+.heat-cell[data-level="1"] { background: var(--ramp-1); }
+.heat-cell[data-level="2"] { background: var(--ramp-2); }
+.heat-cell[data-level="3"] { background: var(--ramp-3); }
+.heat-cell[data-level="4"] { background: var(--ramp-4); }
+.heat-cell[data-level="5"] { background: var(--ramp-5); }
+.heat-cell.blank { background: transparent; }
+.heat-legend {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--grey-3);
+  margin-top: 12px;
+}
+.heat-months {
+  display: flex; gap: 3px; min-width: min-content;
+  font-size: 10px; font-weight: 600; color: var(--grey-3);
+  margin-bottom: 5px; height: 12px;
+}
+.heat-month { width: 10px; flex-shrink: 0; white-space: nowrap; }
+
+.rule-top { border-top: 2px dotted var(--rule); padding-top: 14px; margin-top: 16px; }
+
+.bar-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; font-size: 13px; font-weight: 600; }
+.bar-row .bar-label {
+  width: 84px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--grey-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bar-row .bar-track {
+  flex: 1; height: 10px; background: var(--fog); border-radius: 4px; overflow: hidden;
+}
+/* display:block — width has no effect on an inline box, which is what a bare
+   <span> is, and the fill silently rendered at zero width. */
+.bar-row .bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--ramp-3);
+  transition: width .3s ease-out;
+}
+.bar-row .bar-value {
+  width: 40px; text-align: right; font-variant-numeric: tabular-nums;
+}
+
+/* ── Study screens (review, browse, quiz run) ───────────────────────────── */
+.study {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  padding: 0 var(--shell-x) var(--shell-x);
+}
+.study-top {
+  height: var(--topbar-h);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.study-top .title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--grey-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.study-top .counter {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--grey-2);
+  font-variant-numeric: tabular-nums;
+}
+.study-top .btn-sm { padding: 7px 14px; }
+
+.study-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.study-inner { width: 100%; max-width: 900px; margin: auto; }
+
+.study-foot {
+  flex-shrink: 0;
+  height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* The flashcard: one surface, two faces stacked in a single grid cell so the
+   card keeps one height and can turn over. A short fade on each new card marks
+   the change without slowing the loop; reduced-motion switches it off. */
+.flashcard { perspective: 1800px; width: 100%; animation: cardIn .12s ease-out; }
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+.flashcard-inner {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform .5s cubic-bezier(.35, .1, .14, 1);
+}
+.flashcard-inner.flipped { transform: rotateY(180deg); }
+.flashcard-face {
+  position: relative;
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background: var(--surface);
+  border-radius: var(--r-big);
+  padding: 26px 42px 24px;
+  min-height: 380px;
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.flashcard-face.back { transform: rotateY(180deg); }
+.face-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  min-height: 24px;
+}
+.face-head .card-tags {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--grey-4);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.face-body { flex: 1; display: flex; align-items: center; min-height: 0; padding: 10px 0; }
+.face-foot { min-height: 34px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+.card-front { font-size: 28px; font-weight: 600; line-height: 1.32; letter-spacing: -.012em; }
+.card-back { font-size: 17px; line-height: 1.62; font-weight: 500; }
+.face-body.answer { display: block; overflow-y: auto; align-items: stretch; }
+
+/* The prompt, echoed above the answer so it is still readable while grading. */
+.face-echo {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--grey-1);
+  line-height: 1.4;
+  padding-bottom: 14px;
+  border-bottom: 2px dotted var(--rule);
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+.face-echo .katex { font-size: 1em; }
+.card-hint { font-size: 13.5px; font-weight: 500; color: var(--grey-1); font-style: italic; }
+
+.rating-row { display: flex; gap: 12px; }
+.rating-btn {
+  width: 148px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1.5px solid rgba(17, 17, 20, .16);
+  border-radius: 18px;
+  padding: 12px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transition: border-color .12s, background .12s;
+}
+.rating-btn:hover { border-color: var(--ink); }
+.rating-btn:active { transform: scale(.97); }
+.rating-btn .label {
+  font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+}
+.rating-btn .interval {
+  font-size: 11.5px; font-weight: 600; color: var(--grey-3); font-variant-numeric: tabular-nums;
+}
+/* All four weigh the same, deliberately. Good is the answer most reviews get,
+   which is exactly why filling it in was wrong: this rating is the only input
+   FSRS ever receives, and pushing you towards one of the four with colour buys
+   a faster click at the cost of a less true answer. Nothing here is a default
+   and nothing here is a verdict, so nothing here is coloured. */
+
+.reveal-row { display: flex; align-items: center; gap: 10px; }
+
+.session-done {
+  background: var(--surface);
+  border-radius: var(--r-big);
+  padding: 46px 56px;
+  max-width: 560px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+}
+.session-done .title { font-size: 32px; font-weight: 700; letter-spacing: -.02em; }
+.session-done .summary { font-size: 13.5px; font-weight: 600; color: var(--grey-2); }
+.session-counts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+.session-counts .count-chip {
+  background: var(--fog);
+  border-radius: var(--r-pill);
+  padding: 7px 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  display: inline-flex;
+  gap: 7px;
+}
+.session-counts .count-chip .k {
+  color: var(--grey-2); text-transform: uppercase; letter-spacing: .05em;
+}
+.session-counts .count-chip .v { font-variant-numeric: tabular-nums; }
+.session-done .actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; justify-content: center; }
+.session-done .note { font-size: 12px; color: var(--grey-3); margin-top: 8px; }
+
+/* ── Quiz list ──────────────────────────────────────────────────────────── */
+.quiz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 18px;
+}
+.quiz-card { padding: 24px 26px 22px; display: flex; flex-direction: column; gap: 5px; }
+.quiz-card .quiz-subject {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--blue);
+  min-height: 15px;
+}
+.quiz-card .quiz-name { font-size: 19px; font-weight: 700; letter-spacing: -.005em; }
+.quiz-card .quiz-meta { font-size: 12.5px; font-weight: 500; color: var(--grey-2); }
+.quiz-card .quiz-actions {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 18px;
+}
+.quiz-card .quiz-actions .grow { flex: 1; }
+
+/* ── Quiz run ───────────────────────────────────────────────────────────── */
+.quiz-progress {
+  height: 4px;
+  flex-shrink: 0;
+  background: rgba(17, 17, 20, .08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.quiz-progress span { display: block; height: 100%; background: var(--blue); transition: width .25s; }
+
+.q-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; justify-content: center; }
+.q-column {
+  width: 100%;
+  max-width: 840px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: fit-content;
+  margin: auto 0;
+  padding: 4px 0;
+}
+.q-card { background: var(--surface); border-radius: var(--r-card); padding: 28px 34px; }
+.q-prompt { font-size: 20px; font-weight: 600; line-height: 1.4; letter-spacing: -.01em; }
+
+.opt-list { display: grid; gap: 10px; }
+.opt {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  width: 100%;
+  background: var(--surface);
+  border: 1.5px solid rgba(17, 17, 20, .12);
+  border-radius: 16px;
+  padding: 15px 18px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+  transition: border-color .12s, background .12s;
+}
+.opt:hover:not(.locked) { border-color: var(--ink); }
+.opt .opt-key {
+  width: 26px; height: 26px;
+  border-radius: var(--r-chip);
+  background: var(--fog);
+  color: var(--grey-1);
+  font-size: 11.5px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.opt .opt-body { flex: 1; }
+.opt .opt-mark { flex-shrink: 0; font-size: 15px; font-weight: 800; }
+.opt.locked { cursor: default; }
+.opt.dim { opacity: .55; }
+.opt.selected { border-color: var(--ink); }
+.opt.correct { border-color: var(--blue); background: rgba(43, 50, 240, .05); }
+.opt.correct .opt-key { background: var(--blue); color: #fff; }
+.opt.correct .opt-mark { color: var(--blue); }
+.opt.wrong { border-color: rgba(200, 67, 74, .45); background: rgba(200, 67, 74, .04); }
+.opt.wrong .opt-mark { color: var(--danger); }
+
+.cloze-text {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  font-size: 18px; font-weight: 500; line-height: 1.9;
+}
+.cloze-blank {
+  display: inline-block;
+  min-width: 140px;
+  border: none;
+  border-bottom: 2px solid var(--ink);
+  background: transparent;
+  text-align: center;
+  padding: 2px 6px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--blue);
+  outline: none;
+}
+.cloze-blank:focus { border-bottom-color: var(--blue); }
+.cloze-blank.correct { border-bottom-color: var(--blue); color: var(--blue); }
+.cloze-blank.wrong { border-bottom-color: var(--danger); color: var(--danger); text-decoration: line-through; }
+.cloze-answer { color: var(--blue); font-size: 16px; font-weight: 600; margin-left: 6px; }
+
+.short-input {
+  width: 100%;
+  border: none;
+  border-bottom: 2px solid var(--ink);
+  background: transparent;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--blue);
+  outline: none;
+  padding: 8px 2px;
+}
+
+.order-list { display: flex; flex-direction: column; gap: 10px; }
+.order-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  border: 1.5px solid rgba(17, 17, 20, .12);
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.order-item.correct { border-color: var(--blue); background: rgba(43, 50, 240, .05); }
+.order-item.wrong { border-color: rgba(200, 67, 74, .45); background: rgba(200, 67, 74, .04); }
+.order-item .order-index {
+  width: 22px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--grey-4);
+  font-variant-numeric: tabular-nums;
+}
+.order-item .order-body { flex: 1; }
+.order-move { display: flex; gap: 6px; }
+.order-move button {
+  width: 30px; height: 30px;
+  border: none;
+  border-radius: 9px;
+  background: var(--fog);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.order-move button:hover:not(:disabled) { background: var(--fog-2); }
+.order-move button:disabled { opacity: .35; cursor: default; }
+
+.q-verdict {
+  border: 1.5px solid rgba(43, 50, 240, .35);
+  background: rgba(43, 50, 240, .05);
+  border-radius: 20px;
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.q-verdict.wrong { border-color: rgba(200, 67, 74, .35); background: rgba(200, 67, 74, .05); }
+.q-verdict .verdict-label {
+  font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--blue);
+}
+.q-verdict.wrong .verdict-label { color: var(--danger); }
+.q-verdict .verdict-line { font-size: 14px; font-weight: 500; color: var(--ink-2); }
+.q-verdict .verdict-line b { font-weight: 700; color: var(--ink); }
+.q-explain { font-size: 13.5px; font-weight: 500; line-height: 1.6; color: var(--grey-1); }
+.q-actions { display: flex; align-items: center; gap: 12px; }
+
+.result-card {
+  background: var(--surface);
+  border-radius: var(--r-big);
+  padding: 42px 48px;
+  max-width: 660px;
+  width: 100%;
+  margin: auto;
+}
+.result-score {
+  font-size: 52px;
+  font-weight: 700;
+  letter-spacing: -.025em;
+  line-height: 1;
+  color: var(--blue);
+  font-variant-numeric: tabular-nums;
+}
+.result-sub { font-size: 13.5px; font-weight: 600; color: var(--grey-2); margin-top: 6px; }
+.result-list { margin-top: 20px; }
+.result-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 2px dotted var(--line);
+  font-size: 14px;
+  font-weight: 500;
+}
+.result-item:last-child { border-bottom: none; }
+.result-item .mark {
+  width: 26px; height: 26px;
+  border-radius: var(--r-chip);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  background: var(--blue-tint);
+  color: var(--blue);
+}
+.result-item.wrong .mark { background: rgba(200, 67, 74, .1); color: var(--danger); }
+.result-item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-actions { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+
+/* ── Cards library ──────────────────────────────────────────────────────── */
+.card-list { background: var(--surface); border-radius: var(--r-card); padding: 6px 24px; }
+.card-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 2px;
+  border-bottom: 2px dotted var(--rule);
+  border-radius: 6px;
+}
+.card-row:last-child { border-bottom: none; }
+.card-row:hover { background: var(--hover); }
+.card-row.selected { background: rgba(43, 50, 240, .045); }
+.card-row .cell-front {
+  flex: 1.4; min-width: 0; font-size: 14px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-row .cell-back {
+  flex: 1; min-width: 0; font-size: 13px; color: var(--grey-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-row .cell-deck {
+  width: 140px; text-align: right; font-size: 12px; font-weight: 600; color: var(--grey-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-row .cell-lapses {
+  font-size: 12px; font-weight: 700; color: var(--grey-3); font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.card-row input[type="checkbox"] { accent-color: var(--blue); flex-shrink: 0; }
+.list-end {
+  text-align: center;
+  padding: 18px 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--grey-3);
+  min-height: 30px;
+}
+
+/* ── Import ─────────────────────────────────────────────────────────────────
+   One column: the input card, then the result of validating it, full width,
+   in reading order. Two side-by-side cards never agreed on a height. */
+#import-result { margin-top: 18px; }
+.import-expects {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 26px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .import-expects { grid-template-columns: minmax(0, 1fr); }
+}
+.import-shape {
+  margin: 0;
+  font-family: var(--font-num);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--grey-1);
+  background: var(--field);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-input);
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.import-deck-line { display: flex; align-items: center; gap: 12px; }
+.import-deck-line .field-label { white-space: nowrap; }
+.import-deck-line .select { flex: 1; }
+.paste-box {
+  width: 100%;
+  height: 280px;
+  resize: none;
+  border: 1.5px dashed #C6C8DA;
+  border-radius: 16px;
+  background: var(--field);
+  padding: 16px 18px;
+  font-family: var(--font-num);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  outline: none;
+}
+.paste-box:focus { border-color: var(--ink); border-style: solid; }
+.import-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+.import-actions .grow { flex: 1; }
+
+/* The issue list scrolls rather than pushing the page: a 200-line paste with
+   40 bad entries still shows its figures and its Import button. */
+.issue-list {
+  display: flex; flex-direction: column; gap: 6px; margin-top: 16px;
+  max-height: 260px; overflow-y: auto;
+}
+.issue {
+  display: flex;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  padding: 8px 11px;
+  border-radius: var(--r-chip);
+  background: var(--fog);
+  color: var(--ink-2);
+}
+.issue.error { background: rgba(200, 67, 74, .07); color: #93343A; }
+.issue.warning { background: var(--blue-tint); color: var(--blue-dark); }
+.issue .where {
+  font-family: var(--font-num); font-size: 11.5px; flex-shrink: 0; opacity: .75;
+}
+/* Figures on the left, the decision on the right, on the first line of the
+   result: the Import button is never below a fold of issues. */
+.preview-head {
+  display: flex;
+  align-items: center;
+  gap: 20px 30px;
+  flex-wrap: wrap;
+}
+.preview-head .preview-figures { flex: 1; }
+.preview-commit { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+.preview-figures { display: flex; gap: 30px; flex-wrap: wrap; }
+.preview-figure .value {
+  font-size: 30px; font-weight: 700; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; color: var(--blue); line-height: 1.1;
+}
+.preview-figure .label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--grey-3); margin-top: 3px;
+}
+
+/* Where the cards would land: one dotted row per deck, not a run-on line. */
+.preview-decks { margin-top: 18px; }
+.preview-deck-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 2px;
+  border-bottom: 2px dotted var(--rule);
+  font-size: 13px;
+  font-weight: 600;
+}
+.preview-deck-row:last-child { border-bottom: none; }
+.preview-deck-row .preview-deck-name { flex: 1; min-width: 0; word-break: break-word; }
+.preview-deck-row .preview-deck-count {
+  font-variant-numeric: tabular-nums; font-weight: 700; color: var(--blue);
+}
+.preview-deck-row.more { color: var(--grey-3); font-weight: 600; }
+
+/* ── Stats ──────────────────────────────────────────────────────────────── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+.stat-card { padding: 24px 26px; display: flex; flex-direction: column; gap: 16px; }
+.stat-head { display: flex; align-items: baseline; gap: 12px; }
+.stat-head .stat-name {
+  flex: 1; font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: .005em;
+}
+.stat-head .stat-value {
+  font-size: 32px; font-weight: 700; letter-spacing: -.025em;
+  font-variant-numeric: tabular-nums; color: var(--blue);
+}
+.hard-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 2px dotted var(--rule);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.hard-row:last-child { border-bottom: none; }
+.hard-row .hard-front { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hard-row .hard-n { font-size: 12px; font-weight: 700; color: var(--grey-3); font-variant-numeric: tabular-nums; }
+
+/* ── Settings ───────────────────────────────────────────────────────────── */
+.settings-section {
+  padding: 24px 26px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.settings-section > .card-title { margin-bottom: 0; }
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 2px dotted var(--rule);
+}
+.setting-row:last-child { border-bottom: none; }
+.setting-row .setting-main { flex: 1; min-width: 0; }
+.setting-row .setting-name { font-size: 14px; font-weight: 600; }
+.setting-row .setting-desc { font-size: 12.5px; color: var(--grey-2); margin-top: 3px; }
+.setting-note { font-size: 12.5px; color: var(--grey-2); line-height: 1.5; }
+.limit-inputs { display: flex; align-items: center; gap: 8px; }
+.limit-inputs .cap {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--grey-3);
+}
+.version-line { font-size: 11.5px; font-weight: 600; color: var(--grey-4); }
+
+/* ── Shortcuts overlay ──────────────────────────────────────────────────── */
+.shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 28px;
+}
+.shortcut-section { min-width: 0; }
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.shortcut-row .keys { display: inline-flex; gap: 4px; min-width: 92px; }
+@media (max-width: 560px) {
+  .shortcut-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Empty states ───────────────────────────────────────────────────────── */
+.empty .empty-glyph {
+  width: 44px; height: 44px;
+  margin: 0 auto 12px;
+  border: 2.5px solid var(--rule);
+  border-radius: 12px;
+  position: relative;
+}
+.empty .empty-glyph::after {
+  content: '';
+  position: absolute;
+  left: 9px; right: 9px; top: 17px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: var(--rule);
+}
+.empty .btn { margin-top: 16px; }

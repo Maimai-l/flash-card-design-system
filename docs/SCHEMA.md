@@ -1,0 +1,200 @@
+# Import format
+
+> This is the app's reference for what the importer accepts. If you are *writing*
+> cards, the authority is `.claude/skills/knowledge-cards/SKILL.md`, which is
+> self-contained and ships its own validator — do not treat this file as a
+> prerequisite for it.
+
+Everything enters the app as JSON pasted into the Import page. There are two
+shapes, and they are unrelated to each other:
+
+| Shape | What it is | Scheduled? | Counts against daily limits? |
+|---|---|---|---|
+| `cards` | Persistent flashcards, front and back | Yes, by FSRS | Yes |
+| `quiz` | A fixed question set you take on demand | No | No |
+
+A quiz question never attaches to a card, and a card never carries questions.
+Deleting every card in a subject leaves its quizzes untouched, and taking a quiz
+changes nothing about what is due.
+
+Both shapes may appear in the same object.
+
+---
+
+## Cards
+
+```jsonc
+{
+  "deck": "Mathematics::Linear Algebra",   // default deck for every card below
+  "cards": [
+    {
+      "front": "Define an eigenvector of $A$",
+      "back": "A **nonzero** vector $v$ such that $Av = \\lambda v$.",
+      "hint": "think about direction",     // optional, revealed on request
+      "tags": ["definition", "exam"],      // optional
+      "id": "la.eigenvector.def",          // optional, see below
+      "deck": "Mathematics::Other"         // optional, overrides the top-level deck
+    }
+  ]
+}
+```
+
+**Required:** `front`, `back`, and a deck (either per card or at the top level).
+
+**Decks** are a tree written with `::`. `Mathematics::Linear Algebra::Eigenvalues`
+creates all three levels. Daily limits belong to the top level, the subject, so
+that level must be the name of the course: `Mathematics`, not `9709`; `Computer
+Science`, not `9618`. A syllabus code goes in `tags`, where it is searchable and
+does not split one course into two budgets. The Import page's *Copy deck names*
+button lists the paths that already exist.
+
+**`id`** makes an import repeatable. A card with an `id` that already exists is
+updated in place rather than duplicated, so you can hand a deck back to an LLM,
+have it revise the wording, and re-import without creating a second copy.
+
+Without an `id`, a card whose `front` already exists in the same deck is reported
+as a duplicate and skipped. Tick *Import duplicates too* to override that.
+
+---
+
+## Quizzes
+
+```jsonc
+{
+  "quiz": {
+    "name": "Linear Algebra — Ch.3",
+    "subject": "Mathematics",              // optional, groups the quiz list
+    "id": "la.ch3",                        // optional; re-import replaces this quiz
+    "questions": [ ... ]
+  }
+}
+```
+
+Use `"quizzes": [ ... ]` to import several at once.
+
+Re-importing a quiz compares its question list against the stored one first.
+Identical, in the same order, and nothing is written: the preview says
+*unchanged*, and a half-finished run of that quiz survives. If anything did
+change, the list is replaced wholesale and that run is discarded in the same
+step, because its saved answers point at questions that no longer exist. Past
+attempt scores are kept either way.
+
+### Question types
+
+**`mcq`** — the options and the answer key are yours. The app never generates
+distractors.
+
+```jsonc
+{ "type": "mcq",
+  "prompt": "Which is NOT a vector space axiom?",
+  "options": ["Closure under addition",
+              "A multiplicative inverse for every vector",
+              "Associativity of addition",
+              "Existence of a zero vector"],
+  "answer": 1,                             // option index; [0, 2] for multi-answer
+  "explain": "Vector spaces need additive inverses, not multiplicative ones." }
+```
+
+Single-answer questions submit on click. Multi-answer questions toggle and wait
+for *Check*.
+
+**`cloze`** — you decide what is hidden. The app never picks blanks itself.
+
+```jsonc
+{ "type": "cloze",
+  "text": "rank(A) + {{nullity(A)}} = {{n|dim V}}",
+  "match": "loose",                        // optional: "loose" (default) or "exact"
+  "explain": "Rank-nullity theorem." }
+```
+
+Each `{{...}}` is one blank. Alternatives are separated by `|`; the first is what
+gets shown as the answer.
+
+**`short`** — graded against the list you supply.
+
+```jsonc
+{ "type": "short",
+  "prompt": "Symbol conventionally used for an eigenvalue?",
+  "answers": ["lambda", "λ"],
+  "match": "loose" }
+```
+
+**`ordering`** — `items` are written in the correct order and shuffled for you.
+
+```jsonc
+{ "type": "ordering",
+  "prompt": "Order the steps of Gaussian elimination",
+  "items": ["Forward elimination to row echelon form",
+            "Back substitution",
+            "Read off the solution"] }
+```
+
+### Matching
+
+`match: "loose"` (the default) lowercases, collapses whitespace, and strips
+punctuation, including full-width CJK punctuation. What survives is compared for
+**exact equality** against each accepted answer, normalised the same way. There
+is no fuzzy matching: no edit distance, no stemming, no substring, no synonyms.
+`the derivative` does not match `derivative`, and `λ` does not match `lambda`,
+so list every form you will accept.
+
+Numbers are the one exception to the punctuation sweep. A decimal point between
+two digits is kept, because deleting it made `1.5` and `15` the same answer; a
+leading `.5` is read as `0.5`. A comma between digits *is* deleted, so `1,024`
+and `1024` match. Trailing zeros are significant: `0.50` does not match `0.5`.
+
+`match: "exact"` compares the trimmed string as written; use it when the precise
+form is the point.
+
+A cloze with several blanks is right only when every blank is right. Each blank
+is marked individually on screen, but the question scores as one.
+
+### Unknown types
+
+A question whose `type` is not one of the four above is reported as a warning at
+import time and dropped. The rest of the quiz imports normally.
+
+---
+
+## Text formatting
+
+Both card text and question text accept:
+
+- **Maths** — `$...$` inline, `$$...$$` display, TeX syntax, rendered by a
+  bundled copy of KaTeX. No network access is involved.
+- **Markdown**, a small subset: `**bold**`, `*italic*`, `` `code` ``, `- ` bullet
+  lists, `1. ` numbered lists, and blank lines between paragraphs.
+
+Remember that JSON needs its backslashes doubled: `$Av = \\lambda v$`.
+
+---
+
+## Export
+
+*Cards → Export cards* downloads the current deck as a JSON file in exactly the
+format above; *Settings → Export all cards* does the same for every deck at
+once, and each quiz exports from its menu. All of them round-trip: import the
+file you exported and every card updates in place, byte for byte, which
+`tests/test_export.py` holds them to.
+
+---
+
+## Adding a question type
+
+One file plus one line. `web/js/questions/<type>.js` exports an object with:
+
+| Member | Purpose |
+|---|---|
+| `autoSubmit(question)` | submit as soon as an answer is picked? |
+| `initialResponse(question)` | the blank response to start from |
+| `render(question, state)` | HTML for the unanswered and marked states |
+| `mount(root, q, state, ctx)` | wire up inputs; `ctx = {setResponse, submit}` |
+| `canSubmit(question, state)` | is there enough of an answer to grade? |
+| `grade(question, response)` | `true` / `false` |
+| `summary(question, response)` | `{given, correct}` for the results page |
+| `onKey(event, ...)` | optional; return `true` if the key was handled |
+| `label(question)` | optional; short text for the results list |
+
+Register it in `web/js/questions/index.js`, and add its validation rules to
+`_validate_question` in `app/services/import_service.py` so bad data is caught at
+import rather than at 2am mid-quiz.

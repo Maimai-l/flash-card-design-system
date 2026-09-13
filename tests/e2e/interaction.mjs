@@ -1,0 +1,613 @@
+/* Browser pass over every screen.
+ *
+ *   node tests/e2e/interaction.mjs [baseUrl]
+ *
+ * Needs Playwright and a running server (default http://127.0.0.1:8737).
+ * It resets the database it talks to, so point it at a throwaway one:
+ *
+ *   KC_USER_DATA=/tmp/kc-e2e python main.py --no-browser &
+ *   node tests/e2e/interaction.mjs
+ */
+
+import fs from 'fs';
+import os from 'os';
+import { chromium } from 'playwright';
+import { matchesAny } from '../../web/js/questions/util.js';
+
+const BASE = process.argv[2] || 'http://127.0.0.1:8737';
+const failures = [];
+let checks = 0;
+
+function check(label, condition) {
+  checks += 1;
+  if (!condition) failures.push(label);
+}
+
+// ── Answer matching ───────────────────────────────────────────────────────
+// A pure function, so it is checked here rather than through the DOM. The
+// decimal cases are the reason this block exists: the punctuation sweep used to
+// delete the point, so answering 15 to a question whose answer was 1.5 was
+// marked correct.
+for (const [given, accepted, want] of [
+  ['  Lambda ', 'lambda', true],
+  ['DERIVATIVE.', 'derivative', true],
+  ['why?', 'why', true],
+  ['the derivative', 'derivative', false],
+  ['1.5', '1.5', true],
+  ['15', '1.5', false],
+  ['3.14159', '314159', false],
+  ['.5', '0.5', true],
+  ['0.5', '.5', true],
+  ['0.50', '0.5', false],
+  ['1,024', '1024', true],
+  ['', 'anything', false],
+]) {
+  check(`${JSON.stringify(given)} ${want ? 'matches' : 'does not match'} ${JSON.stringify(accepted)}`,
+    matchesAny(given, [accepted]) === want);
+}
+
+async function call(method, args = []) {
+  const response = await fetch(`${BASE}/api`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method, args }),
+  });
+  return response.json();
+}
+
+const CARDS = {
+  deck: 'Mathematics::Linear Algebra',
+  cards: [
+    { front: 'Define an eigenvector of $A$', back: 'A nonzero $v$ with $Av=\\lambda v$.' },
+    { front: 'Rank-nullity theorem', back: '$\\operatorname{rank}(A)+\\operatorname{nullity}(A)=n$' },
+    { front: 'What is a basis?', back: 'A linearly independent spanning set.' },
+  ],
+  quiz: {
+    name: 'LA basics',
+    subject: 'Mathematics',
+    questions: [
+      { type: 'mcq', prompt: 'Which is NOT an axiom?', options: ['Closure', 'Multiplicative inverse', 'Associativity'], answer: 1, explain: 'Additive, not multiplicative.' },
+      { type: 'cloze', text: 'rank(A) + {{nullity(A)}} = {{n}}' },
+      { type: 'short', prompt: 'Eigenvalue symbol?', answers: ['lambda', 'λ'] },
+      { type: 'ordering', prompt: 'Order the steps', items: ['First', 'Second', 'Third'] },
+    ],
+  },
+};
+
+await call('reset_all');
+await call('update_settings', [{ default_new_limit: '50', default_review_limit: '200', language: 'en' }]);
+await call('import_commit', [JSON.stringify(CARDS)]);
+await call('import_commit', [JSON.stringify({
+  deck: 'Computer Science::Networks',
+  cards: [{ front: 'What does ARP resolve?', back: 'IP to MAC on the local link.' }],
+})]);
+
+const browser = await chromium.launch({
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM || '/opt/pw-browsers/chromium',
+});
+const page = await browser.newPage({
+  viewport: { width: 1280, height: 860 },
+  permissions: ['clipboard-read', 'clipboard-write'],
+  acceptDownloads: true,
+});
+const catchDownload = async (action) => {
+  const [download] = await Promise.all([page.waitForEvent('download'), action()]);
+  const body = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+  return { name: download.suggestedFilename(), body };
+};
+const readClipboard = () => page.evaluate(() => navigator.clipboard.readText());
+page.setDefaultTimeout(8000);
+
+const consoleErrors = [];
+page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`));
+
+await page.goto(`${BASE}/index.html`, { waitUntil: 'networkidle' });
+await page.waitForSelector('.hero-card');
+
+// ── Home ──────────────────────────────────────────────────────────────────
+check('deck tree lists both subjects',
+  await page.locator('.deck-item:has-text("Mathematics")').count() === 1
+  && await page.locator('.deck-item:has-text("Computer Science")').count() === 1);
+check('all four cards are offered',
+  (await page.locator('.hero-value').textContent()).trim() === '4');
+check('the state breakdown actually paints its bars',
+  await page.locator('.activity-card .bar-fill').first().evaluate((el) =>
+    el.getBoundingClientRect().width) > 0);
+// The two ways into a deck belong with the number they act on, not floating in
+// the top-right corner of the window.
+check('Study and Browse sit inside the first card',
+  await page.locator('.hero-card [data-action="startSession"]').count() === 1
+  && await page.locator('.hero-card [data-action="startBrowse"]').count() === 1);
+// The reference capability card, copied: a pixel letter at the head and the
+// same row upside down at the foot, one of each per card.
+check('subject cards carry their pixel letters, head and mirrored foot',
+  await page.locator('.subject-card .cap-letter').count()
+    === 2 * await page.locator('.subject-card').count()
+  && await page.locator('.subject-card .cap-foot').count()
+    === await page.locator('.subject-card').count());
+check('the pixel face really loaded',
+  await page.evaluate(() => document.fonts.check('12px Pixel')));
+
+// ── Review ────────────────────────────────────────────────────────────────
+await page.click('.deck-item:has-text("Linear Algebra")');
+await page.waitForTimeout(300);
+await page.click('button:has-text("Study")');
+await page.waitForSelector('.card-front');
+check('maths renders on the front', await page.locator('.card-front .katex').count() > 0);
+check('no rating buttons before the answer', await page.locator('.rating-btn').count() === 0);
+
+check('review shows the same thin progress bar the quiz does',
+  await page.locator('.quiz-progress').count() === 1);
+await page.keyboard.press(' ');
+await page.waitForSelector('.rating-btn');
+check('four ratings, each with an interval',
+  await page.locator('.rating-btn').count() === 4
+  && (await page.locator('.rating-btn .interval').first().textContent()).trim().length > 0);
+
+await page.keyboard.press('1');                       // Again
+await page.waitForTimeout(300);
+const afterAgain = await page.locator('.counter').textContent();
+check('Again requeues the card into this sitting', afterAgain.includes('/ 4'));
+
+await page.keyboard.press('z');                       // undo it
+await page.waitForTimeout(400);
+check('undo returns to an unanswered card',
+  await page.locator('.rating-btn').count() === 0
+  && (await page.locator('.counter').textContent()).startsWith('0'));
+
+// edit the current card in place
+await page.keyboard.press('e');
+await page.waitForSelector('#edit-front');
+await page.fill('#edit-back', 'Edited during review');
+await page.click('button:has-text("Save")');
+await page.waitForTimeout(400);
+await page.keyboard.press(' ');
+await page.waitForSelector('.card-back');
+check('inline edit is visible immediately',
+  (await page.locator('.card-back').textContent()).includes('Edited during review'));
+
+let ratedHardOnce = false;
+for (let i = 0; i < 60; i++) {
+  if (await page.locator('.session-done').count()) break;
+  if (await page.locator('.rating-btn').count()) {
+    await page.keyboard.press(ratedHardOnce ? '3' : '2');
+    ratedHardOnce = true;
+  } else if (await page.locator('button:has-text("Show answer")').count()) await page.keyboard.press(' ');
+  await page.waitForTimeout(180);
+}
+check('the session reaches a summary', await page.locator('.session-done').count() === 1);
+check('summary offers more study without obligation',
+  await page.locator('button:has-text("Study more")').count() === 1);
+
+// ── Handing struggles to an AI ────────────────────────────────────────────
+check('the summary offers the struggled cards',
+  await page.locator('[data-action="copyStruggles"]').count() === 1);
+await page.click('[data-action="copyStruggles"]');
+await page.waitForTimeout(300);
+const strugglesText = await readClipboard();
+check('struggles copy as a kc_export block',
+  strugglesText.includes('"kind": "struggles"') && strugglesText.includes('"rated": "hard"'));
+check('struggles carry the deck and a stable id',
+  strugglesText.includes('Mathematics::Linear Algebra'));
+await page.click('button:has-text("Done")');
+await page.waitForSelector('.hero-card');
+
+// ── Quiz ──────────────────────────────────────────────────────────────────
+await page.click('.nav-link:has-text("Quiz")');
+await page.waitForSelector('.quiz-name');
+check('quiz says it has never been taken',
+  (await page.locator('.quiz-meta').first().textContent()).includes('never taken'));
+
+await page.click('button:has-text("Start")');
+await page.waitForSelector('.opt');
+await page.click('.opt >> nth=2');                    // wrong on purpose
+await page.waitForTimeout(300);
+check('a wrong choice is marked wrong', await page.locator('.opt.wrong').count() === 1);
+check('the right choice is shown', await page.locator('.opt.correct').count() === 1);
+check('the explanation appears', await page.locator('.q-explain').count() === 1);
+check('quizzes never ask you to self-rate', await page.locator('.rating-btn').count() === 0);
+
+await page.keyboard.press('Enter');
+await page.waitForSelector('.cloze-blank');
+await page.fill('.cloze-blank >> nth=0', 'NULLITY(a)');   // loose matching
+await page.fill('.cloze-blank >> nth=1', 'n');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+check('cloze is graded, not advanced, by one Enter',
+  await page.locator('.cloze-blank.correct').count() === 2);
+
+// Typing must enable the Check button itself; Enter is not the only door.
+await page.keyboard.press('Enter');
+await page.waitForSelector('#short-input');
+check('typing enables Check for mouse users',
+  await page.evaluate(() => {
+    const input = document.getElementById('short-input');
+    input.value = 'probe';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return !document.getElementById('q-check').disabled;
+  }));
+await page.fill('#short-input', '');
+await page.fill('#short-input', '  Lambda ');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+check('short answer ignores case and padding', await page.locator('.opt.correct').count() === 1);
+
+await page.keyboard.press('Enter');
+await page.waitForSelector('.order-item');
+check('ordering shuffles the items',
+  (await page.locator('.order-item .order-body').allTextContents()).join('|') !== 'First|Second|Third');
+await page.click('button:has-text("Check")');
+await page.waitForTimeout(300);
+await page.keyboard.press('Enter');
+await page.waitForSelector('.result-score');
+check('results show a score out of four',
+  (await page.locator('.result-score').textContent()).includes('/ 4'));
+check('wrong answers can be retried alone',
+  await page.locator('button:has-text("Retry wrong")').count() === 1);
+await page.click('[data-action="copyQuizForAI"]');
+await page.waitForTimeout(300);
+const quizText = await readClipboard();
+check('wrong answers copy as a kc_export block',
+  quizText.includes('"kind": "quiz_wrong"') && quizText.includes('"my_answer"'));
+await page.click('button:has-text("Done")');
+await page.waitForSelector('.quiz-name');
+check('the attempt is recorded',
+  !(await page.locator('.quiz-meta').first().textContent()).includes('never taken'));
+
+// ── A quiz left half-finished ─────────────────────────────────────────────
+// Card reviews write on every rating; quizzes used to hold the run in the tab,
+// so one Escape threw away every answered question.
+await page.click('button:has-text("Start")');
+await page.waitForSelector('.opt');
+await page.click('.opt >> nth=0');
+await page.waitForTimeout(250);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(250);
+await page.keyboard.press('Escape');
+await page.waitForSelector('.quiz-name');
+check('the list shows a half-finished run',
+  await page.locator('.quiz-card [data-fresh="1"]').count() === 1);
+
+await page.click('button:has-text("Resume")');
+await page.waitForSelector('.q-card');
+check('resuming lands where it stopped',
+  (await page.locator('.counter').textContent()).trim().startsWith('2'));
+
+// and it is on the server, not in the tab
+await page.goto(`${BASE}/index.html`, { waitUntil: 'networkidle' });
+await page.click('.nav-link:has-text("Quiz")');
+await page.waitForSelector('.quiz-name');
+await page.click('button:has-text("Resume")');
+await page.waitForSelector('.q-card');
+check('the run survives a full page reload',
+  (await page.locator('.counter').textContent()).trim().startsWith('2'));
+
+await page.keyboard.press('Escape');
+await page.waitForSelector('.quiz-name');
+await page.click('button:has-text("Start over")');
+await page.waitForSelector('.modal');
+await page.click('.modal .btn-danger');
+await page.waitForSelector('.q-card');
+check('starting over rewinds to the first question',
+  (await page.locator('.counter').textContent()).trim().startsWith('1'));
+// Leaving a run in which nothing has been graded yet leaves nothing behind.
+await page.keyboard.press('Escape');
+await page.waitForSelector('.quiz-name');
+check('an untouched run does not linger in the list',
+  await page.locator('.quiz-card [data-fresh="1"]').count() === 0);
+
+// ── Re-importing a quiz you have not edited ───────────────────────────────
+// Replacing the question list mints new ids, and a saved run stores the old
+// ones, so a blind replace threw away a quiz you were halfway through even when
+// the file had not changed by a byte.
+await page.click('.quiz-card .btn-primary');
+await page.waitForSelector('.opt');
+await page.click('.opt >> nth=0');
+await page.waitForTimeout(250);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(250);
+await page.keyboard.press('Escape');
+await page.waitForSelector('.quiz-name');
+
+await page.click('.nav-link:has-text("Import")');
+await page.waitForSelector('#import-text');
+await page.fill('#import-text', JSON.stringify(CARDS));
+await page.click('button:has-text("Validate")');
+await page.waitForSelector('.preview-figures');
+check('the preview says the quiz is unchanged rather than replaced',
+  (await page.locator('.preview-figures ~ * .chip, .chip').last().textContent()).trim()
+    .toLowerCase() === 'unchanged');
+await page.click('[data-action="commitImport"]');
+await page.waitForTimeout(900);
+
+await page.click('.nav-link:has-text("Quiz")');
+await page.waitForSelector('.quiz-name');
+check('the half-finished run survives an unedited re-import',
+  await page.locator('.quiz-card [data-fresh="1"]').count() === 1);
+await page.click('.quiz-card .btn-primary');
+await page.waitForSelector('.q-card');
+check('and Resume still lands where it stopped',
+  (await page.locator('.counter').textContent()).trim().startsWith('2'));
+await page.keyboard.press('Escape');
+await page.waitForSelector('.quiz-name');
+await page.click('.quiz-card [data-fresh="1"]');
+await page.waitForSelector('.modal');
+await page.click('.modal .btn-danger');
+await page.waitForSelector('.q-card');
+await page.keyboard.press('Escape');
+await page.waitForSelector('.quiz-name');
+
+// ── Cards ─────────────────────────────────────────────────────────────────
+await page.click('.nav-link:has-text("Cards")');
+await page.waitForSelector('.card-row');
+const rows = await page.locator('.card-row').count();
+check('the table lists the deck', rows === 3);
+await page.fill('#card-search', 'basis');
+await page.waitForTimeout(500);
+check('search narrows the table', await page.locator('.card-row').count() === 1);
+await page.fill('#card-search', '');
+await page.waitForTimeout(500);
+
+await page.click('button:has-text("New card")');
+await page.waitForSelector('#card-front');
+await page.fill('#card-front', 'Added from the UI');
+await page.fill('#card-back', 'It saved');
+await page.click('.modal button:has-text("Save")');
+await page.waitForTimeout(600);
+check('a new card appears in the table',
+  await page.locator('.card-row').count() === rows + 1);
+
+// Export is a file, not a clipboard gamble, and it must pair every front with
+// its own back and deck.
+const deckExport = await catchDownload(() => page.click('button:has-text("Export cards")'));
+check('export downloads a named JSON file',
+  /^knowledge-cards-[a-z0-9-]+\.json$/.test(deckExport.name));
+check('the deck export holds exactly the cards on screen',
+  deckExport.body.cards.length === rows + 1
+  && deckExport.body.cards.every((c) => c.front && c.back && c.deck.startsWith('Mathematics')));
+check('the card added a moment ago exports with its own back',
+  deckExport.body.cards.some((c) => c.front === 'Added from the UI' && c.back === 'It saved'));
+
+// ── Import ────────────────────────────────────────────────────────────────
+await page.click('.nav-link:has-text("Import")');
+await page.waitForSelector('#import-text');
+await page.fill('#import-text', JSON.stringify({
+  deck: 'Exams::TMUA',
+  cards: [{ front: 'Change of base', back: '$\\log_a b = \\frac{\\log_c b}{\\log_c a}$' }, { front: 'no back here' }],
+}));
+await page.click('button:has-text("Validate")');
+await page.waitForSelector('.preview-figures');
+check('the preview counts what would be created',
+  (await page.locator('.preview-figure .value').first().textContent()).trim() === '1');
+check('the bad entry is reported, not fatal',
+  await page.locator('.issue.error').count() === 1);
+// Not `button:has-text("Import")` — that also matches the nav link.
+await page.click('[data-action="commitImport"]');
+await page.waitForTimeout(900);
+const decksAfterImport = (await call('get_decks')).map((deck) => deck.path);
+check('importing creates the new subject', decksAfterImport.includes('Exams::TMUA'));
+check('importing writes only the good card',
+  (await call('get_overview', ['Exams'])).total_cards === 1);
+
+// A JSON file is the paste box without the paste: picking it fills the box
+// and validates on its own.
+const importFile = `${os.tmpdir()}/kc-e2e-import.json`;
+fs.writeFileSync(importFile, JSON.stringify({
+  deck: 'Exams::TMUA',
+  cards: [{ front: 'From a file', back: 'It landed in the box.' }],
+}));
+await page.setInputFiles('#import-file', importFile);
+await page.waitForSelector('.preview-figures');
+check('picking a JSON file fills the paste box',
+  (await page.inputValue('#import-text')).includes('From a file'));
+check('and runs the validation by itself',
+  (await page.locator('.preview-figure .value').first().textContent()).trim() === '1');
+check('the result sits below the input, not beside it',
+  await page.evaluate(() => {
+    const box = document.getElementById('import-text').getBoundingClientRect();
+    const result = document.getElementById('import-result').getBoundingClientRect();
+    return result.top >= box.bottom && Math.abs(result.width - box.width) < 60;
+  }));
+await page.click('[data-action="commitImport"]');
+await page.waitForTimeout(900);
+check('the file import commits like a paste',
+  (await call('get_overview', ['Exams'])).total_cards === 2);
+fs.unlinkSync(importFile);
+
+// ── Stats ─────────────────────────────────────────────────────────────────
+await page.click('.nav-link:has-text("Stats")');
+await page.waitForSelector('.stat-grid');
+check('stats report the reviews just made',
+  Number((await page.locator('.stat-value').nth(1).textContent()).trim()) > 0);
+await page.click('[data-action="exportReport"]');
+await page.waitForTimeout(400);
+const reportText = await readClipboard();
+check('the study report copies as a kc_export block',
+  reportText.includes('"kind": "report"') && reportText.includes('"due_next_7_days"'));
+
+// ── Settings and language ─────────────────────────────────────────────────
+await page.click('.nav-link:has-text("Settings")');
+await page.waitForSelector('.setting-row');
+check('each subject can carry its own limits',
+  await page.locator('[data-change="setDeckLimit"]').count() >= 4);
+await page.click('[data-action="setLanguage"][data-lang="zh"]');
+await page.waitForTimeout(600);
+check('the interface switches to Chinese',
+  (await page.locator('#brand').textContent()).trim() === '知识卡片');
+check('the document declares the language it is showing',
+  await page.evaluate(() => document.documentElement.dataset.lang) === 'zh');
+await page.click('[data-action="setLanguage"][data-lang="en"]');
+await page.waitForTimeout(600);
+
+const allExport = await catchDownload(() => page.click('[data-action="exportAllCards"]'));
+const arp = allExport.body.cards.find((c) => c.front === 'What does ARP resolve?');
+check('Settings exports every deck to one file',
+  allExport.name === 'knowledge-cards-all.json'
+  && arp && arp.back === 'IP to MAC on the local link.'
+  && arp.deck === 'Computer Science::Networks');
+
+// ── Browse leaves the schedule alone ──────────────────────────────────────
+await page.click('.nav-link:has-text("Home")');
+await page.waitForSelector('.hero-card');
+const beforeBrowse = JSON.stringify(await call('get_overview', ['']));
+await page.click('button:has-text("Browse")');
+await page.waitForSelector('.card-front');
+await page.keyboard.press(' ');
+await page.keyboard.press('ArrowRight');
+await page.waitForTimeout(300);
+await page.keyboard.press('Escape');
+await page.waitForSelector('.hero-card');
+check('browsing changes nothing', JSON.stringify(await call('get_overview', [''])) === beforeBrowse);
+
+// ── Chrome alignment ──────────────────────────────────────────────────────
+// Controls used to move sideways as you navigated: the sidebar appeared beside
+// only two of six pages, the container had two different widths, and the
+// scrollbar took space only on pages long enough to scroll.
+const geometry = [];
+for (const nav of ['Home', 'Quiz', 'Cards', 'Import', 'Stats', 'Settings']) {
+  await page.click(`.nav-link:has-text("${nav}")`);
+  await page.waitForSelector('h1');
+  await page.waitForTimeout(200);
+  geometry.push(await page.evaluate((name) => {
+    const h1 = document.querySelector('h1').getBoundingClientRect();
+    const content = document.getElementById('content');
+    const de = document.documentElement;
+    let node = document.getElementById('topbar').parentElement;
+    let scrollingAncestors = 0;
+    while (node) {
+      if (node.scrollHeight > node.clientHeight + 1) scrollingAncestors += 1;
+      node = node.parentElement;
+    }
+    return {
+      name,
+      x: Math.round(h1.left),
+      y: Math.round(h1.top),
+      width: Math.round(content.getBoundingClientRect().width),
+      topbar: Math.round(document.getElementById('topbar').getBoundingClientRect().width),
+      docScrolls: de.scrollHeight > de.clientHeight,
+      paneScrolls: content.scrollHeight > content.clientHeight,
+      scrollingAncestors,
+    };
+  }, nav));
+}
+const distinct = (key) => new Set(geometry.map((g) => g[key]));
+check('every page puts its heading at the same x', distinct('x').size === 1);
+check('every page puts its heading at the same y', distinct('y').size === 1);
+check('every page has the same content width', distinct('width').size === 1);
+check('the top bar is the same width on every page', distinct('topbar').size === 1);
+// The chrome cannot be pushed by a scrollbar it does not live inside. Checking
+// the structure rather than the pixels, because whether a scrollbar takes
+// layout space depends on the platform and cannot be reproduced headless.
+check('the document never scrolls', [...distinct('docScrolls')].every((v) => v === false));
+check('the top bar has no scrolling ancestor',
+  [...distinct('scrollingAncestors')].every((v) => v === 0));
+check('a long page scrolls the content pane instead',
+  geometry.some((g) => g.paneScrolls) && distinct('width').size === 1);
+check('the sidebar stays mounted across the chrome',
+  await page.evaluate(() => !document.getElementById('sidebar').hidden));
+
+// Mounted everywhere is not a licence to show the same thing everywhere.
+await page.click('.nav-link:has-text("Settings")');
+await page.waitForSelector('.setting-row');
+const settingsPanel = await page.locator('#sidebar').textContent();
+check('Settings lists its own sections, not decks',
+  settingsPanel.includes('Daily limits') && !settingsPanel.includes('All decks'));
+
+await page.click('.nav-link:has-text("Quiz")');
+await page.waitForSelector('.quiz-name');
+check('Quiz lists subjects, not decks',
+  (await page.locator('#sidebar').textContent()).includes('All quizzes'));
+
+await page.click('.nav-link:has-text("Home")');
+await page.waitForSelector('.hero-card');
+check('a deck-scoped page still lists decks',
+  (await page.locator('#sidebar').textContent()).includes('All decks'));
+
+// ── Cards: one list you keep scrolling ────────────────────────────────────
+await call('import_commit', [JSON.stringify({
+  deck: 'Computer Science::Bulk',
+  cards: Array.from({ length: 70 }, (_, i) => ({
+    id: `bulk.${i}`, front: `What is bulk term ${i}?`, back: `Answer ${i}.` })),
+})]);
+await page.click('.nav-link:has-text("Cards")');
+await page.waitForSelector('.card-row');
+// An earlier step scoped the sidebar to one chapter; the bulk deck is elsewhere.
+await page.click('.deck-item:has-text("All decks")');
+await page.waitForSelector('.card-row');
+await page.waitForTimeout(300);
+const firstPage = await page.locator('#cards-body .card-row').count();
+check('the first slice is one page long', firstPage === 50);
+check('there is no pager', await page.locator('.pager').count() === 0);
+for (let i = 0; i < 4; i += 1) {
+  await page.evaluate(() => {
+    const pane = document.getElementById('content');
+    pane.scrollTop = pane.scrollHeight;
+  });
+  await page.waitForTimeout(400);
+}
+const afterScroll = await page.locator('#cards-body .card-row').count();
+check('scrolling appends the rest', afterScroll > firstPage);
+check('the list says when it has run out',
+  (await page.locator('#cards-footer').textContent()).includes('all of them'));
+
+// ── The left panel opens the same way everywhere ──────────────────────────
+// Only the deck panel has a "+", and letting the button be absent elsewhere
+// made the header shorter there, so Quiz did not line up with Home.
+const railTops = [];
+for (const nav of ['Home', 'Quiz', 'Cards', 'Import', 'Stats', 'Settings']) {
+  await page.click(`.nav-link:has-text("${nav}")`);
+  await page.waitForSelector('#sidebar .deck-item');
+  await page.waitForTimeout(150);
+  railTops.push(await page.evaluate(() =>
+    Math.round(document.querySelector('#sidebar .deck-item').getBoundingClientRect().top)));
+}
+check('the first row of the left panel starts at the same height everywhere',
+  new Set(railTops).size === 1);
+
+// ── No em dashes reach the interface ──────────────────────────────────────
+const dashes = [];
+for (const nav of ['Home', 'Quiz', 'Cards', 'Import', 'Stats', 'Settings']) {
+  await page.click(`.nav-link:has-text("${nav}")`);
+  await page.waitForSelector('h1');
+  await page.waitForTimeout(200);
+  if ((await page.locator('body').innerText()).includes('\u2014')) dashes.push(nav);
+}
+check(`no em dash on any page${dashes.length ? ` (${dashes.join(', ')})` : ''}`,
+  dashes.length === 0);
+
+// ── Import hands over deck names, not a schema ────────────────────────────
+await page.click('.nav-link:has-text("Import")');
+await page.waitForSelector('#import-text');
+check('Import offers the deck names, and does not repeat the skill\'s schema',
+  await page.locator('[data-action="copyDecks"]').count() === 1
+  && await page.locator('[data-action="copySchema"]').count() === 0);
+
+// ── Keyboard niceties ─────────────────────────────────────────────────────
+await page.click('.nav-link:has-text("Cards")');
+await page.waitForSelector('.card-row');
+await page.click('button:has-text("New card")');
+await page.waitForSelector('.modal');
+check('opening a dialog moves focus into it',
+  await page.evaluate(() => document.activeElement.closest('.modal') !== null));
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+
+await page.keyboard.press('?');
+await page.waitForSelector('.shortcut-grid');
+check('? opens the shortcut overview',
+  (await page.locator('.shortcut-row').count()) >= 8);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+
+check('no console errors anywhere', consoleErrors.length === 0);
+
+await browser.close();
+
+if (failures.length || consoleErrors.length) {
+  console.error(`FAIL — ${failures.length} of ${checks} checks failed`);
+  failures.forEach((label) => console.error(`  ✗ ${label}`));
+  consoleErrors.forEach((line) => console.error(`  ! ${line}`));
+  process.exit(1);
+}
+console.log(`OK — ${checks} checks passed`);

@@ -1,0 +1,44 @@
+# Build artifacts
+dist/
+build/
+*.zip
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.分发/
+
+分发/
+# Cache
+youdao_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.claude/*
+!.claude/skills/
+# macOS
+.DS_Store
+
+# Database WAL files (generated at runtime)
+*.db-shm
+*.db-wal
+
+# Local runtime data
+*.db
+*.log
+node_modules/
+
+# Python caches inside the skill
+.claude/skills/**/__pycache__/
+.zed/
+
+# Packaged skill artifacts — rebuild with the command in README
+*.skill
